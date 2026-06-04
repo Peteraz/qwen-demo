@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <title>Qwen Chat</title>
+
+    <style>
+
+        body{
+            width: 800px;
+            margin: 50px auto;
+            font-family: Arial;
+        }
+
+        #result{
+            border: 1px solid #ccc;
+            height: 500px;
+            overflow-y: auto;
+            padding: 10px;
+            margin-top: 20px;
+            white-space: pre-wrap;
+        }
+
+        input{
+            width: 600px;
+            height: 40px;
+            font-size: 18px;
+        }
+
+        button{
+            width: 120px;
+            height: 45px;
+        }
+
+    </style>
+
+</head>
+<body>
+
+<h1>Qwen AI Chat</h1>
+
+<input id="msg" placeholder="璇疯緭鍏ラ棶棰?>
+
+<button onclick="chat()">发送</button>
+
+<div id="result"></div>
+
+<script>
+
+    function chat() {
+
+    const msg = document.getElementById("msg").value;
+
+    const result = document.getElementById("result");
+
+    result.innerHTML = "";
+
+    const eventSource =
+        new EventSource(
+            "/ai/stream?msg=" + encodeURIComponent(msg)
+        );
+
+    eventSource.onmessage = function(event) {
+
+        result.innerHTML += event.data;
+    };
+
+    eventSource.onerror = function() {
+
+        eventSource.close();
+    };
+}
+
+</script>
+
+</body>
+</html>

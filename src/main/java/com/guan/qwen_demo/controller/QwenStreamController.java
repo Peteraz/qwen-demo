@@ -15,23 +15,38 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Qwen 大模型接口控制器。
+ *
+ * <p>负责接收前端聊天请求，调用 DashScope 兼容 OpenAI 的聊天接口，
+ * 并将模型生成结果以 SSE 方式流式返回给浏览器。</p>
+ */
 @RestController
 @RequestMapping("/ai")
 public class QwenStreamController {
-    @Value("${qwen.api-key}")
+    @Value("${qwen.api-key:sk-04201bdcab1241e8a11f32374c5a11f9}")
     private String apiKey;
 
-    @Value("${qwen.url}")
+    @Value("${qwen.url:https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions}")
     private String url;
 
     private final WebClient webClient = WebClient.builder().build();
 
+    /**
+     * Qwen 流式聊天接口。
+     *
+     * <p>前端通过 EventSource 请求该接口，后端开启模型的 stream 模式，
+     * 逐段解析模型返回的增量内容，并实时推送给前端页面。</p>
+     *
+     * @param msg 用户输入的问题
+     * @return 模型生成的流式文本片段
+     */
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public Flux<String> stream(String msg) {
 
         Map<String, Object> body = new HashMap<>();
         body.put("model", "qwen-plus");
-        // 寮€鍚祦寮?
+        // 开启 DashScope 的流式响应模式。
         body.put("stream", true);
 
         List<Map<String, String>> messages = new ArrayList<>();
@@ -53,7 +68,7 @@ public class QwenStreamController {
 
                 .flatMap(chunk -> {
                     List<String> results = new ArrayList<>();
-                    // 鍗冮棶 SSE 鍙兘鏈夊琛?
+                    // DashScope 返回的是 SSE 格式，这里只解析 data 行中的增量内容。
                     String[] lines = chunk.split("\n");
                     for (String line : lines) {
                         line = line.trim();

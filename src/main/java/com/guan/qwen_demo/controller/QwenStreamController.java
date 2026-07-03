@@ -3,9 +3,11 @@ package com.guan.qwen_demo.controller;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.reactive.function.client.WebClient;
 import reactor.core.publisher.Flux;
@@ -24,13 +26,14 @@ import java.util.Map;
 @RestController
 @RequestMapping("/ai")
 public class QwenStreamController {
-    @Value("${qwen.api-key:sk-04201bdcab1241e8a11f32374c5a11f9}")
+    @Value("${qwen.api-key}")
     private String apiKey;
 
-    @Value("${qwen.url:https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions}")
+    @Value("${qwen.url}")
     private String url;
 
     private final WebClient webClient = WebClient.builder().build();
+    private final ObjectMapper mapper = new ObjectMapper();
 
     /**
      * Qwen 流式聊天接口。
@@ -42,11 +45,9 @@ public class QwenStreamController {
      * @return 模型生成的流式文本片段
      */
     @GetMapping(value = "/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public Flux<String> stream(String msg) {
-
+    public Flux<String> stream(@RequestParam String msg) {
         Map<String, Object> body = new HashMap<>();
         body.put("model", "qwen-plus");
-        // 开启 DashScope 的流式响应模式。
         body.put("stream", true);
 
         List<Map<String, String>> messages = new ArrayList<>();
@@ -56,43 +57,59 @@ public class QwenStreamController {
         messages.add(user);
         body.put("messages", messages);
 
-        ObjectMapper mapper = new ObjectMapper();
-
         return webClient.post()
                 .uri(url)
-                .header("Authorization", "Bearer " + apiKey)
-                .header("Content-Type", "application/json")
+                .header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .accept(MediaType.TEXT_EVENT_STREAM)
                 .bodyValue(body)
                 .retrieve()
                 .bodyToFlux(String.class)
+                .flatMap(this::parseStreamChunk)
+                .onErrorResume(e -> Flux.just("请求 Qwen 接口失败：" + e.getMessage()));
+    }
 
-                .flatMap(chunk -> {
-                    List<String> results = new ArrayList<>();
-                    // DashScope 返回的是 SSE 格式，这里只解析 data 行中的增量内容。
-                    String[] lines = chunk.split("\n");
-                    for (String line : lines) {
-                        line = line.trim();
-                        if (!line.startsWith("data:")) continue;
+    /**
+     * 解析 DashScope 返回的流式数据片段，并提取 choices[].delta.content。
+     *
+     * <p>WebClient 可能返回原始 SSE 行，例如 "data: {...}"；
+     * 也可能返回已经解码后的 JSON 字符串，例如 "{...}"。
+     * 这里同时兼容这两种格式。</p>
+     */
+    private Flux<String> parseStreamChunk(String chunk) {
+        List<String> results = new ArrayList<>();
+        String[] lines = chunk.split("\\r?\\n");
 
-                        String data = line.substring(5).trim();
-                        if (data.isEmpty() || "[DONE]".equals(data)) continue;
+        for (String line : lines) {
+            line = line.trim();
+            if (line.isEmpty()) {
+                continue;
+            }
 
-                        try {
-                            JsonNode jsonNode = mapper.readTree(data);
-                            JsonNode choices = jsonNode.path("choices");
-                            if (choices.isArray()) {
-                                for (JsonNode choice : choices) {
-                                    JsonNode content = choice.path("delta").path("content");
-                                    if (!content.isMissingNode() && !content.asText().isEmpty()) {
-                                        results.add(content.asText());
-                                    }
-                                }
-                            }
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
+            String data = line.startsWith("data:")
+                    ? line.substring(5).trim()
+                    : line;
+            if (data.isEmpty() || "[DONE]".equals(data)) {
+                continue;
+            }
+
+            try {
+                JsonNode choices = mapper.readTree(data).path("choices");
+                if (!choices.isArray()) {
+                    continue;
+                }
+
+                for (JsonNode choice : choices) {
+                    JsonNode content = choice.path("delta").path("content");
+                    if (!content.isMissingNode() && !content.asText().isEmpty()) {
+                        results.add(content.asText());
                     }
-                    return Flux.fromIterable(results);
-                });
+                }
+            } catch (Exception e) {
+                results.add("解析模型响应失败：" + e.getMessage());
+            }
+        }
+
+        return Flux.fromIterable(results);
     }
 }

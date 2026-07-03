@@ -5,14 +5,31 @@
     <title>Qwen Chat</title>
 
     <style>
-
-        body{
+        body {
             width: 800px;
             margin: 50px auto;
-            font-family: Arial;
+            font-family: Arial, sans-serif;
         }
 
-        #result{
+        .chat-input {
+            display: flex;
+            gap: 10px;
+        }
+
+        #msg {
+            flex: 1;
+            height: 40px;
+            font-size: 18px;
+            padding: 0 10px;
+        }
+
+        button {
+            width: 120px;
+            height: 44px;
+            cursor: pointer;
+        }
+
+        #result {
             border: 1px solid #ccc;
             height: 500px;
             overflow-y: auto;
@@ -21,56 +38,97 @@
             white-space: pre-wrap;
         }
 
-        input{
-            width: 600px;
-            height: 40px;
-            font-size: 18px;
+        .message {
+            margin-bottom: 14px;
+            line-height: 1.6;
         }
 
-        button{
-            width: 120px;
-            height: 45px;
+        .role {
+            font-weight: bold;
+            margin-right: 6px;
         }
 
+        .user .role {
+            color: #1677ff;
+        }
+
+        .assistant .role {
+            color: #52c41a;
+        }
     </style>
-
 </head>
 <body>
 
 <h1>Qwen AI Chat</h1>
 
-<input id="msg" placeholder="请输入问题!">
-
-<button onclick="chat()">发送</button>
+<div class="chat-input">
+    <input id="msg" placeholder="请输入问题">
+    <button id="sendBtn" onclick="chat()">发送</button>
+</div>
 
 <div id="result"></div>
 
 <script>
+    const input = document.getElementById("msg");
+    const result = document.getElementById("result");
+    const sendBtn = document.getElementById("sendBtn");
+
+    input.addEventListener("keydown", function (event) {
+        if (event.key === "Enter") {
+            chat();
+        }
+    });
+
+    function appendMessage(role, text) {
+        const message = document.createElement("div");
+        message.className = "message " + role;
+
+        const roleName = document.createElement("span");
+        roleName.className = "role";
+        roleName.textContent = role === "user" ? "我：" : "AI：";
+
+        const content = document.createElement("span");
+        content.className = "content";
+        content.textContent = text;
+
+        message.appendChild(roleName);
+        message.appendChild(content);
+        result.appendChild(message);
+        scrollToBottom();
+
+        return content;
+    }
+
+    function scrollToBottom() {
+        result.scrollTop = result.scrollHeight;
+    }
 
     function chat() {
+        const msg = input.value.trim();
+        if (!msg) {
+            return;
+        }
 
-    const msg = document.getElementById("msg").value;
+        appendMessage("user", msg);
+        const aiContent = appendMessage("assistant", "");
 
-    const result = document.getElementById("result");
+        input.value = "";
+        sendBtn.disabled = true;
 
-    result.innerHTML = "";
-
-    const eventSource =
-        new EventSource(
+        const eventSource = new EventSource(
             "/ai/stream?msg=" + encodeURIComponent(msg)
         );
 
-    eventSource.onmessage = function(event) {
+        eventSource.onmessage = function (event) {
+            aiContent.textContent += event.data;
+            scrollToBottom();
+        };
 
-        result.innerHTML += event.data;
-    };
-
-    eventSource.onerror = function() {
-
-        eventSource.close();
-    };
-}
-
+        eventSource.onerror = function () {
+            eventSource.close();
+            sendBtn.disabled = false;
+        };
+    }
 </script>
 
 </body>
